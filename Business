@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BUSINESS EMPIRE</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0b1020;color:#fff;font-family:Arial,sans-serif}
+header{padding:22px 16px;background:#141c32;text-align:center;border-bottom:1px solid #293653}
+h1{margin:0;color:#f5c451;font-size:25px;letter-spacing:2px}
+header p{color:#9eacc8;margin:7px 0 0}
+main{max-width:850px;margin:auto;padding:16px}
+.card{background:#17223b;border:1px solid #2a3a5e;border-radius:16px;padding:16px;margin:12px 0}
+input,button{width:100%;padding:13px;border-radius:10px;border:0;margin:6px 0;font-size:15px}
+input{background:#0e172b;color:white;border:1px solid #344565}
+button{background:#f2bd45;color:#171717;font-weight:bold;cursor:pointer}
+button.secondary{background:#2b3b5e;color:white}
+button:disabled{opacity:.4}
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:12px 0}
+.tabs button{font-size:13px;padding:11px 4px}
+.stat{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #293653}
+.muted{color:#9eacc8;font-size:13px}
+.item{background:#101a30;border-radius:12px;padding:13px;margin:9px 0}
+.item h3{margin:0 0 7px;color:#f5c451}
+.gold{color:#f5c451}
+.hidden{display:none}
+.small{font-size:12px;color:#9eacc8}
+h2{font-size:19px}
+</style>
+</head>
+<body>
+<header>
+<h1>BUSINESS EMPIRE</h1>
+<p>Построй свою бизнес-империю</p>
+</header>
+<main>
+<section id="auth" class="card">
+<h2>Вход в игру</h2>
+<input id="email" type="email" placeholder="Электронная почта">
+<input id="password" type="password" placeholder="Пароль">
+<input id="username" placeholder="Имя игрока (для регистрации)">
+<button onclick="register()">Зарегистрироваться</button>
+<button class="secondary" onclick="login()">Войти</button>
+<p id="authmsg" class="muted"></p>
+</section>
+
+<section id="game" class="hidden">
+<div class="card">
+<div class="stat"><span>Игрок</span><b id="playername">—</b></div>
+<div class="stat"><span>Баланс</span><b class="gold" id="balance">0 ₽</b></div>
+<div class="stat"><span>Всего заработано</span><b id="earned">0 ₽</b></div>
+<div class="stat"><span>Доход в секунду</span><b id="income">0 ₽</b></div>
+<button onclick="claimIncome()">Забрать доход</button>
+<button class="secondary" onclick="daily()">Ежедневная награда</button>
+<button class="secondary" onclick="logout()">Выйти из аккаунта</button>
+</div>
+
+<div class="tabs">
+<button onclick="showTab('businesses')">Бизнесы</button>
+<button onclick="showTab('missions')">Задания</button>
+<button onclick="showTab('rating')">Рейтинг</button>
+<button onclick="showTab('clans')">Кланы</button>
+<button onclick="showTab('myclan')">Мой клан</button>
+<button onclick="showTab('profile')">Профиль</button>
+</div>
+
+<div id="businesses" class="tab card">
+<h2>Мои предприятия</h2>
+<div id="businesslist">Загрузка...</div>
+</div>
+
+<div id="missions" class="tab card hidden">
+<h2>Задания и достижения</h2>
+<div id="missionlist"></div>
+</div>
+
+<div id="rating" class="tab card hidden">
+<h2>Рейтинг игроков</h2>
+<div id="ratinglist"></div>
+</div>
+
+<div id="clans" class="tab card hidden">
+<h2>Кланы</h2>
+<p class="muted">Создай собственный клан или вступи в существующий. Максимум — 50 участников.</p>
+<input id="clanname" placeholder="Название клана">
+<input id="clantag" placeholder="Тег клана, например EMPIRE">
+<input id="clandesc" placeholder="Описание клана">
+<button onclick="createClan()">Создать клан</button>
+<hr>
+<input id="jointag" placeholder="Тег клана для вступления">
+<button onclick="joinClan()">Подать заявку</button>
+<h3>Рейтинг кланов</h3>
+<div id="clanrating"></div>
+</div>
+
+<div id="myclan" class="tab card hidden">
+<h2>Управление кланом</h2>
+<div id="claninfo">Загрузка...</div>
+</div>
+
+<div id="profile" class="tab card hidden">
+<h2>Профиль игрока</h2>
+<div id="profileinfo"></div>
+</div>
+</section>
+</main>
+
+<script>
+const SUPABASE_URL = "https://fgjxukjsozuzwfanmwym.supabase.co";
+const SUPABASE_KEY = "sb_publishable_Vrh3VbawSTHQ-Af9HIVqag_Egfo3_0m";
+const db = window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+
+let user=null, profile=null, businesses=[], myClan=null;
+
+function money(n){return Math.floor(Number(n)||0).toLocaleString("ru-RU")+" ₽"}
+function msg(t){document.getElementById("authmsg").textContent=t}
+function showTab(id){
+ document.querySelectorAll(".tab").forEach(x=>x.classList.add("hidden"));
+ document.getElementById(id).classList.remove("hidden");
+ if(id==="rating")loadRating();
+ if(id==="clans")loadClanRating();
+ if(id==="myclan")loadMyClan();
+ if(id==="profile")loadProfile();
+ if(id==="missions")loadMissions();
+}
+async function register(){
+ const email=document.getElementById("email").value.trim();
+ const password=document.getElementById("password").value;
+ const username=document.getElementById("username").value.trim();
+ if(!email||!password||!username)return msg("Заполни все поля.");
+ const {data,error}=await db.auth.signUp({email,password,options:{data:{username}}});
+ if(error)return msg(error.message);
+ msg("Регистрация отправлена. Если потребуется, подтверди почту и войди.");
+}
+async function login(){
+ const {data,error}=await db.auth.signInWithPassword({
+ email:document.getElementById("email").value.trim(),
+ password:document.getElementById("password").value
+ });
+ if(error)return msg(error.message);
+ user=data.user;
+ await startGame();
+}
+async function logout(){
+ await db.auth.signOut();
+ location.reload();
+}
+async function startGame(){
+ document.getElementById("auth").classList.add("hidden");
+ document.getElementById("game").classList.remove("hidden");
+ await loadProfile();
+ await loadBusinesses();
+ await loadClanRating();
+}
+async function loadProfile(){
+ const {data,error}=await db.from("profiles").select("*").eq("id",user.id).single();
+ if(error){alert("Не удалось загрузить профиль: "+error.message);return}
+ profile=data;
+ document.getElementById("playername").textContent=profile.username||"Игрок";
+ document.getElementById("balance").textContent=money(profile.balance);
+ document.getElementById("earned").textContent=money(profile.total_earned);
+ document.getElementById("profileinfo").innerHTML=
+ "<p>Имя: <b>"+safe(profile.username)+"</b></p><p>Баланс: "+money(profile.balance)+"</p><p>Всего заработано: "+money(profile.total_earned)+"</p>";
+}
+function safe(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+async function loadBusinesses(){
+ const a=await db.from("businesses").select("*").order("id");
+ const b=await db.from("player_businesses").select("*").eq("player_id",user.id);
+ if(a.error){document.getElementById("businesslist").textContent=a.error.message;return}
+ businesses=a.data||[];
+ const owned=b.data||[];
+ let total=0;
+ document.getElementById("businesslist").innerHTML=businesses.map(x=>{
+  const p=owned.find(y=>y.business_id===x.id);
+  const level=p?Number(p.level||1):0;
+  const price=Number(x.price||0);
+  const inc=Number(x.income_per_second||x.income||0);
+  total+=level*inc;
+  return `<div class="item"><h3>${safe(x.name)}</h3>
+  <p>Уровень: ${level}</p><p>Доход: ${money(inc*level)} в секунду</p>
+  <p>Цена покупки: ${money(price)}</p>
+  ${level===0?`<button onclick="buy(${x.id})">Купить бизнес</button>`:
+  `<button onclick="upgrade(${x.id})">Улучшить бизнес</button>`}</div>`;
+ }).join("");
+ document.getElementById("income").textContent=money(total);
+}
+async function rpc(name,args={}){
+ const {data,error}=await db.rpc(name,args);
+ if(error)throw error;
+ return data;
+}
+async function buy(id){
+ try{await rpc("buy_business",{p_business_id:id});await refresh();alert("Бизнес куплен!")}
+ catch(e){alert(e.message)}
+}
+async function upgrade(id){
+ try{await rpc("upgrade_business",{p_business_id:id});await refresh();alert("Бизнес улучшен!")}
+ catch(e){alert(e.message)}
+}
+async function claimIncome(){
+ try{const r=await rpc("claim_income");await refresh();alert("Доход получен!")}
+ catch(e){alert(e.message)}
+}
+async function daily(){
+ try{await rpc("claim_daily_reward");await refresh();alert("Ежедневная награда получена!")}
+ catch(e){alert(e.message)}
+}
+async function refresh(){await loadProfile();await loadBusinesses()}
+const missions=[
+ ["first_business","Купить первый бизнес",300],
+ ["earn_1000","Заработать 1 000",500],
+ ["upgrade_level3","Улучшить бизнес до 3 уровня",750],
+ ["own_3_businesses","Владеть тремя бизнесами",1500]
+];
+async function loadMissions(){
+ const {data}=await db.from("player_mission_claims").select("mission_id").eq("player_id",user.id);
+ const done=(data||[]).map(x=>x.mission_id);
+ document.getElementById("missionlist").innerHTML=missions.map(m=>
+ `<div class="item"><b>${m[1]}</b><p>Награда: ${money(m[2])}</p>
+ <button ${done.includes(m[0])?"disabled":""} onclick="claimMission('${m[0]}')">${done.includes(m[0])?"Получено":"Забрать награду"}</button></div>`
+ ).join("");
+}
+async function claimMission(id){
+ try{await rpc("claim_mission",{p_mission_id:id});await refresh();await loadMissions();alert("Награда получена!")}
+ catch(e){alert(e.message)}
+}
+async function loadRating(){
+ const {data,error}=await rpc("get_leaderboard");
+ if(error){document.getElementById("ratinglist").textContent=error.message;return}
+ document.getElementById("ratinglist").innerHTML=(data||[]).map((p,i)=>
+ `<div class="stat"><span>${i+1}. ${safe(p.username)} ${p.is_bot?"(виртуальный соперник)":""}</span><b>${money(p.balance)}</b></div>`
+ ).join("");
+}
+async function createClan(){
+ try{
+ await rpc("create_clan",{p_name:document.getElementById("clanname").value.trim(),p_tag:document.getElementById("clantag").value.trim(),p_description:document.getElementById("clandesc").value.trim()});
+ alert("Клан создан!");await loadMyClan();await loadClanRating();
+ }catch(e){alert(e.message)}
+}
+async function joinClan(){
+ try{await rpc("request_clan_join",{p_tag:document.getElementById("jointag").value.trim()});alert("Заявка отправлена!")}
+ catch(e){alert(e.message)}
+}
+async function loadClanRating(){
+ try{
+ const data=await rpc("get_clan_leaderboard");
+ document.getElementById("clanrating").innerHTML=(data||[]).map((c,i)=>
+ `<div class="stat"><span>${i+1}. [${safe(c.tag)}] ${safe(c.name)}</span><b>${money(c.total_balance)}</b></div>`
+ ).join("")||"Пока нет кланов";
+ }catch(e){document.getElementById("clanrating").textContent=e.message}
+}
+async function loadMyClan(){
+ const {data:member}=await db.from("clan_members").select("*").eq("user_id",user.id).maybeSingle();
+ const el=document.getElementById("claninfo");
+ if(!member){myClan=null;el.innerHTML="Ты пока не состоишь в клане.";return}
+ myClan=member;
+ const {data:clan}=await db.from("clans").select("*").eq("id",member.clan_id).single();
+ if(!clan){el.textContent="Не удалось загрузить клан.";return}
+ const {data:members}=await db.from("clan_members").select("*").eq("clan_id",clan.id);
+ const ids=(members||[]).map(x=>x.user_id);
+ const {data:profiles}=await db.from("profiles").select("id,username,balance").in("id",ids);
+ let html=`<h3>${safe(clan.name)} [${safe(clan.tag)}]</h3><p>${safe(clan.description)}</p><p>Участников: ${(members||[]).length}/50</p><h3>Участники</h3>`;
+ html+=(profiles||[]).map(p=>`<div class="stat"><span>${safe(p.username)} — ${money(p.balance)}</span><span>${p.id===clan.owner_id?"Глава":""}</span></div>`).join("");
+ const owner=clan.owner_id===user.id;
+ if(owner){
+ html+=`<h3>Заявки</h3><div id="requests">Загрузка...</div>
+ <h3>Права помощника</h3><input id="helperid" placeholder="UUID участника-помощника">
+ <button onclick="setHelper()">Назначить помощника</button>
+ <label><input type="checkbox" id="canaccept"> Принимать заявки</label>
+ <label><input type="checkbox" id="cankick"> Исключать участников</label>
+ <label><input type="checkbox" id="canedit"> Редактировать клан</label>
+ <button onclick="savePermissions()">Сохранить права</button>
+ <h3>Редактирование клана</h3><input id="editname" placeholder="Новое название">
+ <input id="editdesc" placeholder="Новое описание">
+ <button onclick="editClan()">Сохранить изменения</button>`;
+ }
+ html+=`<button class="secondary" onclick="leaveClan()">Покинуть клан</button>`;
+ el.innerHTML=html;
+ if(owner)loadRequests(clan.id);
+}
+async function loadRequests(clanId){
+ const el=document.getElementById("requests");if(!el)return;
+ const {data,error}=await db.from("clan_join_requests").select("*").eq("clan_id",clanId).eq("status","pending");
+ if(error){el.textContent=error.message;return}
+ el.innerHTML=(data||[]).map(r=>`<div class="item">Игрок: ${r.user_id}<button onclick="decide('${r.id}',true)">Принять</button><button class="secondary" onclick="decide('${r.id}',false)">Отклонить</button></div>`).join("")||"Новых заявок нет";
+}
+async function decide(id,accept){
+ try{await rpc("decide_clan_request",{p_request_id:id,p_accept:accept});await loadMyClan()}
+ catch(e){alert(e.message)}
+}
+async function setHelper(){
+ try{await rpc("set_clan_helper",{p_user_id:document.getElementById("helperid").value.trim()});alert("Помощник назначен");await loadMyClan()}
+ catch(e){alert(e.message)}
+}
+async function savePermissions(){
+ const id=document.getElementById("helperid").value.trim();
+ const rights=[["can_accept","canaccept"],["can_kick","cankick"],["can_edit","canedit"]];
+ try{for(const [p,k] of rights)await rpc("set_clan_permission",{p_user_id:id,p_permission:p,p_enabled:document.getElementById(k).checked});alert("Права сохранены")}
+ catch(e){alert(e.message)}
+}
+async function editClan(){
+ try{await rpc("edit_clan",{p_name:document.getElementById("editname").value.trim(),p_description:document.getElementById("editdesc").value.trim()});alert("Клан обновлён");await loadMyClan()}
+ catch(e){alert(e.message)}
+}
+async function leaveClan(){
+ if(!confirm("Покинуть клан?"))return;
+ try{await rpc("leave_clan");await loadMyClan();alert("Ты покинул клан")}
+ catch(e){alert(e.message)}
+}
+db.auth.getSession().then(async({data})=>{
+ if(data.session){user=data.session.user;await startGame()}
+});
+</script>
+</body>
+</html>
